@@ -27,17 +27,20 @@ if (!token || !webhookUrl || !astrometryKey || !default_url) {
     process.exit(1);
 }
 
-const bot = new TelegramBot(token, { webHook: { port: port } });
+const bot = new TelegramBot(token);
 
-bot.setWebHook(`${webhookUrl}/webhook`).then((response) => {
-    if (response) {
-        console.log('✅ Webhook successfully set.');
-    } else {
-        console.error('❌ Failed to set webhook.');
-    }
-}).catch((error) => {
-    console.error('❌ Error setting webhook:', error);
-});
+bot.setWebHook(`${webhookUrl}/webhook`)
+    .then((response) => {
+        if (response) {
+            console.log('✅ Webhook successfully set.');
+        } else {
+            console.error('❌ Failed to set webhook.');
+        }
+    })
+    .catch((error) => {
+        console.error('❌ Error setting webhook:', error);
+    });
+
 
 // Rate limiting (In-memory for simplicity; consider persistent storage for scalability)
 const userLastRequest: { [key: number]: number } = {};

@@ -34,8 +34,8 @@ RUN npm install --only=production
 # Copy the compiled JavaScript code from the builder stage
 COPY --from=builder /usr/src/app/dist ./dist
 
-# Expose the port (optional, Cloud Run detects it via the PORT environment variable)
-ENV PORT=8080
+# Expose the port (optional)
+EXPOSE 8080
 
 # Start the application
 CMD ["node", "dist/index.js"]
