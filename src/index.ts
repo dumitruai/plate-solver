@@ -20,12 +20,6 @@ if (!token || !webhookUrl || !astrometryKey || !default_url) {
     process.exit(1);
 }
 
-const app = express();
-
-// Middleware to parse JSON bodies
-app.use(express.json());
-
-// Initialize Telegram Bot without polling
 const bot = new TelegramBot(token, { webHook: { port: port } });
 
 bot.setWebHook(`${webhookUrl}/webhook`).then((response) => {
@@ -378,3 +372,35 @@ async function getAstrometryResult(submissionId: string) {
 
     return result;
 }
+
+// Initialize Express
+const app = express();
+
+// Middleware to parse JSON bodies
+app.use(express.json());
+
+// Register message handlers
+bot.on('message', handleMessage);
+
+// Define the webhook route
+// @ts-ignore
+app.post('/webhook', async (req, res) => {
+    const update = req.body as Update;
+    if (!update) {
+        console.warn('❌ No update found in the request body.');
+        return res.status(400).send('No update found');
+    }
+    console.log('📥 Received update:', JSON.stringify(update, null, 2));
+    try {
+        await bot.processUpdate(update);
+        res.sendStatus(200);
+    } catch (error) {
+        console.error('❌ Error processing update:', error);
+        res.sendStatus(500);
+    }
+});
+
+// Start the Express server (only one app.listen call)
+app.listen(port, () => {
+    console.log(`🚀 Telegram bot is running on port ${port}`);
+});
