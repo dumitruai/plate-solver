@@ -3,27 +3,58 @@ import fs from 'fs';
 import path from 'path';
 import FormData from 'form-data';
 import dotenv from 'dotenv';
-import TelegramBot from "node-telegram-bot-api";
-import {extname} from 'path';
+import TelegramBot, { Update } from "node-telegram-bot-api";
+import { extname } from 'path';
+import { VercelRequest, VercelResponse } from '@vercel/node';
 
 dotenv.config();
 
 const token = process.env.TOKEN as string;
 const astrometryKey = process.env.ASTROMETRY_KEY;
 const default_url = process.env.API_URL;
+const webhookUrl = process.env.WEBHOOK_URL;
 
+if (!webhookUrl) {
+    throw new Error('WEBHOOK_URL is not defined in environment variables.');
+}
 
-const bot = new TelegramBot(token, {polling: true});
+const bot = new TelegramBot(token);
 
+// Set up the webhook
+bot.setWebHook(webhookUrl)
+    .then(() => {
+        console.log(`Webhook set to ${webhookUrl}`);
+    })
+    .catch((err) => {
+        console.error('Failed to set webhook:', err);
+    });
+
+// Rate limiting
 const userLastRequest: { [key: number]: number } = {};
 const RATE_LIMIT_MS = 60 * 1000; // 1 minute
 
-bot.on('message', async (msg) => {
+// Handler function
+export default async (req: VercelRequest, res: VercelResponse) => {
+    if (req.method === 'POST') {
+        const update: Update = req.body;
+
+        if (update.message) {
+            await handleMessage(update.message);
+        }
+
+        res.status(200).send('OK');
+    } else {
+        res.status(405).send('Method Not Allowed');
+    }
+};
+
+// Message handler
+const handleMessage = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
 
     const now = Date.now();
     if (userLastRequest[chatId] && (now - userLastRequest[chatId]) < RATE_LIMIT_MS) {
-        bot.sendMessage(chatId, '⏳ Please wait a minute before submitting another image.');
+        await bot.sendMessage(chatId, '⏳ Please wait a minute before submitting another image.');
         return;
     }
     userLastRequest[chatId] = now;
@@ -40,15 +71,14 @@ bot.on('message', async (msg) => {
             const fileExtension = extname(fileInfo.file_path).toLowerCase();
             const allowedExtensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff'];
             if (!allowedExtensions.includes(fileExtension)) {
-                bot.sendMessage(chatId, '❌ Unsupported file format. Please send an image in JPG, PNG, BMP, or TIFF format.');
+                await bot.sendMessage(chatId, '❌ Unsupported file format. Please send an image in JPG, PNG, BMP, or TIFF format.');
                 return;
             }
 
             // Check file size (optional)
             const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-            // @ts-ignore
-            if (fileInfo.file_size > MAX_FILE_SIZE) {
-                bot.sendMessage(chatId, '⚠️ The image is too large. Please send an image smaller than 10MB.');
+            if (fileInfo.file_size && fileInfo.file_size > MAX_FILE_SIZE) {
+                await bot.sendMessage(chatId, '⚠️ The image is too large. Please send an image smaller than 10MB.');
                 return;
             }
 
@@ -59,7 +89,7 @@ bot.on('message', async (msg) => {
                 throw new Error('❌ Failed to obtain submission ID.');
             }
 
-            bot.sendMessage(chatId, '📥 Image received! Plate solving has started. This may take a few minutes. You will be notified once it\'s complete.');
+            await bot.sendMessage(chatId, '📥 Image received! Plate solving has started. This may take a few minutes. You will be notified once it\'s complete.');
 
             const result: any = await getAstrometryResult(submissionId);
 
@@ -68,7 +98,7 @@ bot.on('message', async (msg) => {
                 const jobId = result.job_id;
                 if (!jobId) {
                     console.error('❌ job_id is missing in the calibration data.');
-                    bot.sendMessage(chatId, '❌ Plate solving was successful, but the job ID is unavailable.');
+                    await bot.sendMessage(chatId, '❌ Plate solving was successful, but the job ID is unavailable.');
                     return;
                 }
 
@@ -79,33 +109,27 @@ bot.on('message', async (msg) => {
 
 
                 // Send the annotated image to the user
-                bot.sendPhoto(chatId, annotatedDisplayUrl, {
+                await bot.sendPhoto(chatId, annotatedDisplayUrl, {
                     caption: '🌟 *Plate Solving Successful!*\nHere is your plate-solved image.',
                     parse_mode: 'Markdown',
-                }).catch(async (error) => {
-                    console.error('❌ Failed to send photo:', error);
-                    bot.sendMessage(chatId, '❌ Failed to send the annotated image.');
                 });
+
                 // Send the RedGreen image to the user
-                bot.sendPhoto(chatId, redGreenImageUrl, {
-                    caption: '🔴🔵 *Plate Solving Successful!*\nHere is your red-green  image.',
+                await bot.sendPhoto(chatId, redGreenImageUrl, {
+                    caption: '🔴🔵 *Plate Solving Successful!*\nHere is your red-green image.',
                     parse_mode: 'Markdown',
-                }).catch(async (error) => {
-                    console.error('❌ Failed to send photo:', error);
-                    bot.sendMessage(chatId, '❌ Failed to send the RedGreen image.');
                 });
+
                 // Send the extraction image to the user
-                bot.sendPhoto(chatId, extractionImageUrl, {
+                await bot.sendPhoto(chatId, extractionImageUrl, {
                     caption: '🔴🔵 *Plate Solving Successful!*\nHere is your Extraction image.',
                     parse_mode: 'Markdown',
-                }).catch(async (error) => {
-                    console.error('❌ Failed to send photo:', error);
-                    bot.sendMessage(chatId, '❌ Failed to send the Extraction image.');
                 });
+
                 const calibrationDetails = `📋 *Calibration Details:*\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``;
-                bot.sendMessage(chatId, calibrationDetails, {parse_mode: 'Markdown'});
+                await bot.sendMessage(chatId, calibrationDetails, { parse_mode: 'Markdown' });
             } else {
-                bot.sendMessage(chatId, `❌ Plate solving failed or is taking too long.`);
+                await bot.sendMessage(chatId, `❌ Plate solving failed or is taking too long.`);
             }
 
             // Optional: Clean up downloaded file
@@ -118,20 +142,20 @@ bot.on('message', async (msg) => {
             });
         } catch (error) {
             console.error(error);
-            bot.sendMessage(chatId, '⚠️ An error occurred while processing your image.');
+            await bot.sendMessage(chatId, '⚠️ An error occurred while processing your image.');
         }
     } else {
-        bot.sendMessage(chatId, '📷 Please send an image for plate-solving.');
+        await bot.sendMessage(chatId, '📷 Please send an image for plate-solving.');
     }
-});
+};
 
 // Download Image Function
 async function downloadImage(url: string, filePath: string) {
-    const downloadsDir = path.join(__dirname, 'downloads');
+    const downloadsDir = path.join('/tmp'); // Use /tmp for serverless environments
 
     // Ensure the downloads directory exists
     if (!fs.existsSync(downloadsDir)) {
-        fs.mkdirSync(downloadsDir, {recursive: true});
+        fs.mkdirSync(downloadsDir, { recursive: true });
     }
 
     const localPath = path.join(downloadsDir, path.basename(filePath));
@@ -157,7 +181,7 @@ async function submitToAstrometry(filePath: string) {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: new URLSearchParams({
-                'request-json': JSON.stringify({apikey: astrometryKey}),
+                'request-json': JSON.stringify({ apikey: astrometryKey }),
             }),
         });
 
