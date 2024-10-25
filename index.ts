@@ -1,52 +1,41 @@
+import express from 'express';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import FormData from 'form-data';
 import dotenv from 'dotenv';
-import TelegramBot, { Update } from "node-telegram-bot-api";
-import { extname } from 'path';
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import TelegramBot, {Update} from "node-telegram-bot-api";
+import {extname} from 'path';
 
 dotenv.config();
 
 const token = process.env.TOKEN as string;
 const astrometryKey = process.env.ASTROMETRY_KEY;
 const default_url = process.env.API_URL;
-const webhookUrl = process.env.WEBHOOK_URL;
+const port = process.env.PORT || 8080; // Default port for Cloud Run
 
-if (!webhookUrl) {
-    throw new Error('WEBHOOK_URL is not defined in environment variables.');
-}
+const app = express();
 
+// Parse incoming JSON payloads
+app.use(express.json());
+
+// Initialize Telegram Bot without polling
 const bot = new TelegramBot(token);
 
-// Set up the webhook
-bot.setWebHook(webhookUrl)
-    .then(() => {
-        console.log(`Webhook set to ${webhookUrl}`);
-    })
-    .catch((err) => {
-        console.error('Failed to set webhook:', err);
-    });
+// Set up the webhook route
+app.post('/webhook', async (req: any, res: any) => {
+    const update: Update = req.body;
 
-// Rate limiting
+    if (update.message) {
+        await handleMessage(update.message);
+    }
+
+    res.status(200).send('OK');
+});
+
+// Rate limiting (In-memory for simplicity; consider persistent storage for scalability)
 const userLastRequest: { [key: number]: number } = {};
 const RATE_LIMIT_MS = 60 * 1000; // 1 minute
-
-// Handler function
-export default async (req: VercelRequest, res: VercelResponse) => {
-    if (req.method === 'POST') {
-        const update: Update = req.body;
-
-        if (update.message) {
-            await handleMessage(update.message);
-        }
-
-        res.status(200).send('OK');
-    } else {
-        res.status(405).send('Method Not Allowed');
-    }
-};
 
 // Message handler
 const handleMessage = async (msg: TelegramBot.Message) => {
@@ -102,11 +91,10 @@ const handleMessage = async (msg: TelegramBot.Message) => {
                     return;
                 }
 
-                // Construct annotated_display_url
+                // Construct URLs
                 const annotatedDisplayUrl = `http://nova.astrometry.net/annotated_display/${jobId}`;
                 const redGreenImageUrl = `http://nova.astrometry.net/red_green_image_display/${jobId}`;
                 const extractionImageUrl = `http://nova.astrometry.net/extraction_image_display/${jobId}`;
-
 
                 // Send the annotated image to the user
                 await bot.sendPhoto(chatId, annotatedDisplayUrl, {
@@ -127,7 +115,7 @@ const handleMessage = async (msg: TelegramBot.Message) => {
                 });
 
                 const calibrationDetails = `📋 *Calibration Details:*\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``;
-                await bot.sendMessage(chatId, calibrationDetails, { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, calibrationDetails, {parse_mode: 'Markdown'});
             } else {
                 await bot.sendMessage(chatId, `❌ Plate solving failed or is taking too long.`);
             }
@@ -151,11 +139,11 @@ const handleMessage = async (msg: TelegramBot.Message) => {
 
 // Download Image Function
 async function downloadImage(url: string, filePath: string) {
-    const downloadsDir = path.join('/tmp'); // Use /tmp for serverless environments
+    const downloadsDir = path.join('/tmp'); // Use /tmp for Cloud Run
 
     // Ensure the downloads directory exists
     if (!fs.existsSync(downloadsDir)) {
-        fs.mkdirSync(downloadsDir, { recursive: true });
+        fs.mkdirSync(downloadsDir, {recursive: true});
     }
 
     const localPath = path.join(downloadsDir, path.basename(filePath));
@@ -181,7 +169,7 @@ async function submitToAstrometry(filePath: string) {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: new URLSearchParams({
-                'request-json': JSON.stringify({ apikey: astrometryKey }),
+                'request-json': JSON.stringify({apikey: astrometryKey}),
             }),
         });
 
@@ -363,3 +351,8 @@ async function getAstrometryResult(submissionId: string) {
 
     return result;
 }
+
+// Start the Express server
+app.listen(port, () => {
+    console.log(`🚀 Telegram bot is running on port ${port}`);
+});
