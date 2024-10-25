@@ -13,11 +13,6 @@ const token = process.env.TOKEN as string;
 const astrometryKey = process.env.ASTROMETRY_KEY;
 const default_url = process.env.API_URL;
 const port = 8080; // Default port for Cloud Run
-const app = express();
-
-// Middleware to parse JSON bodies
-app.use(express.json());
-
 // Initialize Telegram Bot without polling
 const bot = new TelegramBot(token, { webHook: { port: port } });
 
@@ -31,6 +26,7 @@ const RATE_LIMIT_MS = 60 * 1000; // 1 minute
 
 // Message handler
 const handleMessage = async (msg: TelegramBot.Message) => {
+    console.log('📝 Handling message:', JSON.stringify(msg, null, 2));
     const chatId = msg.chat.id;
 
     const now = Date.now();
@@ -346,12 +342,22 @@ async function getAstrometryResult(submissionId: string) {
 
 // Listen for messages
 bot.on('message', handleMessage);
+bot.on('any', (update) => {
+    console.log('🔄 Received update:', JSON.stringify(update, null, 2));
+});
+
+// Initialize Express
+const app = express();
+
+// Middleware to parse JSON bodies
+app.use(express.json());
 
 // Define the webhook route
 // @ts-ignore
 app.post('/webhook', (req, res) => {
     const update = req.body as Update;
     if (!update) {
+        console.warn('❌ No update found in the request body.');
         return res.status(400).send('No update found');
     }
     bot.processUpdate(update);
@@ -362,3 +368,4 @@ app.post('/webhook', (req, res) => {
 app.listen(port, () => {
     console.log(`🚀 Telegram bot is running on port ${port}`);
 });
+
