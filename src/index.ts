@@ -4,21 +4,39 @@ import fs from 'fs';
 import path from 'path';
 import FormData from 'form-data';
 import dotenv from 'dotenv';
-import TelegramBot, {Update} from "node-telegram-bot-api";
-import {extname} from 'path';
+import TelegramBot, { Update } from 'node-telegram-bot-api';
+import { extname } from 'path';
 
 dotenv.config();
 
 const token = process.env.TOKEN as string;
 const astrometryKey = process.env.ASTROMETRY_KEY;
 const default_url = process.env.API_URL;
-const port = 8080; // Default port for Cloud Run
+const port =  8080; // Default port for Cloud Run
+const webhookUrl = process.env.WEBHOOK_URL;
+
+if (!token || !webhookUrl || !astrometryKey || !default_url) {
+    console.error('❌ Missing required environment variables.');
+    process.exit(1);
+}
+
+const app = express();
+
+// Middleware to parse JSON bodies
+app.use(express.json());
+
 // Initialize Telegram Bot without polling
 const bot = new TelegramBot(token, { webHook: { port: port } });
 
-// Define the webhook URL (replace with your actual Cloud Run URL)
-const url = process.env.WEBHOOK_URL; // e.g., https://your-service-url.a.run.app/webhook
-bot.setWebHook(`${url}/webhook`);
+bot.setWebHook(`${webhookUrl}/webhook`).then((response) => {
+    if (response) {
+        console.log('✅ Webhook successfully set.');
+    } else {
+        console.error('❌ Failed to set webhook.');
+    }
+}).catch((error) => {
+    console.error('❌ Error setting webhook:', error);
+});
 
 // Rate limiting (In-memory for simplicity; consider persistent storage for scalability)
 const userLastRequest: { [key: number]: number } = {};
@@ -103,7 +121,7 @@ const handleMessage = async (msg: TelegramBot.Message) => {
                 });
 
                 const calibrationDetails = `📋 *Calibration Details:*\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``;
-                await bot.sendMessage(chatId, calibrationDetails, {parse_mode: 'Markdown'});
+                await bot.sendMessage(chatId, calibrationDetails, { parse_mode: 'Markdown' });
             } else {
                 await bot.sendMessage(chatId, `❌ Plate solving failed or is taking too long.`);
             }
@@ -117,13 +135,40 @@ const handleMessage = async (msg: TelegramBot.Message) => {
                 }
             });
         } catch (error) {
-            console.error(error);
+            console.error('❌ Error processing image:', error);
             await bot.sendMessage(chatId, '⚠️ An error occurred while processing your image.');
         }
     } else {
         await bot.sendMessage(chatId, '📷 Please send an image for plate-solving.');
     }
 };
+
+// Listen for messages
+bot.on('message', handleMessage);
+
+// Define the webhook route
+// @ts-ignore
+app.post('/webhook', async (req, res) => {
+    const update = req.body as Update;
+    if (!update) {
+        console.warn('❌ No update found in the request body.');
+        return res.status(400).send('No update found');
+    }
+    try {
+        console.log('📥 Received update:', JSON.stringify(update, null, 2));
+        bot.processUpdate(update);
+        res.sendStatus(200);
+    } catch (error) {
+        console.error('❌ Error processing update:', error);
+        res.sendStatus(500);
+    }
+});
+
+// Start the Express server
+app.listen(port, () => {
+    console.log(`🚀 Telegram bot is running on port ${port}`);
+});
+
 
 // Download Image Function
 async function downloadImage(url: string, filePath: string) {
@@ -339,33 +384,3 @@ async function getAstrometryResult(submissionId: string) {
 
     return result;
 }
-
-// Listen for messages
-bot.on('message', handleMessage);
-bot.on('any', (update) => {
-    console.log('🔄 Received update:', JSON.stringify(update, null, 2));
-});
-
-// Initialize Express
-const app = express();
-
-// Middleware to parse JSON bodies
-app.use(express.json());
-
-// Define the webhook route
-// @ts-ignore
-app.post('/webhook', (req, res) => {
-    const update = req.body as Update;
-    if (!update) {
-        console.warn('❌ No update found in the request body.');
-        return res.status(400).send('No update found');
-    }
-    bot.processUpdate(update);
-    res.sendStatus(200);
-});
-
-// Start the Express server
-app.listen(port, () => {
-    console.log(`🚀 Telegram bot is running on port ${port}`);
-});
-
