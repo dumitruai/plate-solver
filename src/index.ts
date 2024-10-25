@@ -7,6 +7,13 @@ import dotenv from 'dotenv';
 import TelegramBot, { Update } from 'node-telegram-bot-api';
 import { extname } from 'path';
 
+// Initialize Express
+const app = express();
+
+// Middleware to parse JSON bodies
+app.use(express.json());
+
+
 dotenv.config();
 
 const token = process.env.TOKEN as string;
@@ -372,12 +379,6 @@ async function getAstrometryResult(submissionId: string) {
 
     return result;
 }
-
-// Initialize Express
-const app = express();
-
-// Middleware to parse JSON bodies
-app.use(express.json());
 
 // Register message handlers
 bot.on('message', handleMessage);
