@@ -10,6 +10,6 @@
   ],
   "service_account": "194976041935-compute@developer.gserviceaccount.com",
   "options": {
-    "logging": "NONE"
+    "logging": "CLOUD_LOGGING_ONLY"
   }
 }
