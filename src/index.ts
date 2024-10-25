@@ -12,15 +12,18 @@ dotenv.config();
 const token = process.env.TOKEN as string;
 const astrometryKey = process.env.ASTROMETRY_KEY;
 const default_url = process.env.API_URL;
-const port = process.env.PORT || 8080; // Default port for Cloud Run
+const port = 8080; // Default port for Cloud Run
+const app = express();
 
-const app = express()
+// Middleware to parse JSON bodies
+app.use(express.json());
 
-app.listen(port, () => {
-    console.log(`Server started on port ${port}`);
-})
 // Initialize Telegram Bot without polling
-const bot = new TelegramBot(token);
+const bot = new TelegramBot(token, { webHook: { port: port } });
+
+// Define the webhook URL (replace with your actual Cloud Run URL)
+const url = process.env.WEBHOOK_URL; // e.g., https://your-service-url.a.run.app/webhook
+bot.setWebHook(`${url}/webhook`);
 
 // Rate limiting (In-memory for simplicity; consider persistent storage for scalability)
 const userLastRequest: { [key: number]: number } = {};
@@ -340,6 +343,20 @@ async function getAstrometryResult(submissionId: string) {
 
     return result;
 }
+
+// Listen for messages
+bot.on('message', handleMessage);
+
+// Define the webhook route
+// @ts-ignore
+app.post('/webhook', (req, res) => {
+    const update = req.body as Update;
+    if (!update) {
+        return res.status(400).send('No update found');
+    }
+    bot.processUpdate(update);
+    res.sendStatus(200);
+});
 
 // Start the Express server
 app.listen(port, () => {
