@@ -14,24 +14,13 @@ const astrometryKey = process.env.ASTROMETRY_KEY;
 const default_url = process.env.API_URL;
 const port = process.env.PORT || 8080; // Default port for Cloud Run
 
-const app = express();
+const app = express()
 
-// Parse incoming JSON payloads
-app.use(express.json());
-
+app.listen(port, () => {
+    console.log(`Server started on port ${port}`);
+})
 // Initialize Telegram Bot without polling
 const bot = new TelegramBot(token);
-
-// Set up the webhook route
-app.post('/webhook', async (req: any, res: any) => {
-    const update: Update = req.body;
-
-    if (update.message) {
-        await handleMessage(update.message);
-    }
-
-    res.status(200).send('OK');
-});
 
 // Rate limiting (In-memory for simplicity; consider persistent storage for scalability)
 const userLastRequest: { [key: number]: number } = {};
