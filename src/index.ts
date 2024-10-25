@@ -164,12 +164,6 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Start the Express server
-app.listen(port, () => {
-    console.log(`🚀 Telegram bot is running on port ${port}`);
-});
-
-
 // Download Image Function
 async function downloadImage(url: string, filePath: string) {
     const downloadsDir = path.join('/tmp'); // Use /tmp for Cloud Run
