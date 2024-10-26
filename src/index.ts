@@ -42,22 +42,11 @@ bot.setWebHook(`${webhookUrl}/webhook`)
     });
 
 
-// Rate limiting (In-memory for simplicity; consider persistent storage for scalability)
-const userLastRequest: { [key: number]: number } = {};
-const RATE_LIMIT_MS = 60 * 1000; // 1 minute
 
 // Message handler
 const handleMessage = async (msg: TelegramBot.Message) => {
     console.log('📝 Handling message:', JSON.stringify(msg, null, 2));
     const chatId = msg.chat.id;
-
-    const now = Date.now();
-    if (userLastRequest[chatId] && (now - userLastRequest[chatId]) < RATE_LIMIT_MS) {
-        await bot.sendMessage(chatId, '⏳ Please wait a minute before submitting another image.');
-        return;
-    }
-    userLastRequest[chatId] = now;
-
     if (msg.photo) {
         const file_id = msg.photo[msg.photo.length - 1].file_id;
 
